@@ -96,10 +96,6 @@ function App() {
       window.cv.medianBlur(src, blur, 3);
       window.cv.cvtColor(blur, dst, window.cv.COLOR_RGBA2GRAY);
       window.cv.cvtColor(blur, bgr, window.cv.COLOR_RGBA2BGR);
-      window.cv.cvtColor(bgr, hsv, window.cv.COLOR_BGR2HSV);
-      window.cv.cvtColor(bgr, hls, window.cv.COLOR_BGR2HLS);
-      window.cv.split(hsv, hsvSplit);
-      window.cv.split(hls, hlsSplit);
       window.cv.split(bgr, bgrSplit);
 
       let avgArr = [];
@@ -107,12 +103,6 @@ function App() {
       const bgrCh0 = average(bgrSplit.get(0).data);
       const bgrCh1 = average(bgrSplit.get(1).data);
       const bgrCh2 = average(bgrSplit.get(2).data);
-      const hlsCh0 = average(hlsSplit.get(0).data);
-      const hlsCh1 = average(hlsSplit.get(1).data);
-      const hlsCh2 = average(hlsSplit.get(2).data);
-      const hsvCh0 = average(hsvSplit.get(0).data);
-      const hsvCh1 = average(hsvSplit.get(1).data);
-      const hsvCh2 = average(hsvSplit.get(2).data);
 
       avgArr = [
         bgrCh0,
@@ -131,12 +121,12 @@ function App() {
       console.log(arr.length);
 
       try {
-        if (arr.length > 200) {
+        if (arr.length == 120) {
           let ica = fastICA(arr.slice(20, arr.length), {
             maxIterations: 1000,
             debug: true,
           });
-          console.log(ica.source.map((s) => s[2]));
+          console.log(ica.weights);
           setSignal(ica.source.map((s) => s[2]));
         }
       } catch (error) {
