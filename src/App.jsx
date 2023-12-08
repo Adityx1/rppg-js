@@ -10,8 +10,6 @@ import styled from "styled-components";
 import { initCamera, toRGB } from "./utils";
 import { mean } from "mathjs";
 
-let blur = new window.cv.Mat();
-
 const Chart = styled.div`
   width: 30vw;
 `;
@@ -34,6 +32,7 @@ const defaultState = {
     G: 0,
   }),
   rr: -1,
+  blur: null,
 };
 
 async function initFaceApi() {
@@ -55,10 +54,6 @@ class App extends React.Component {
     console.log("All Assets Loaded");
     await initFaceApi();
     initCamera(this.video);
-    // this.video.addEventListener("playing", () => {
-    // this.onPlay();
-    // console.log("Playing");
-    // });
 
     // Connect to WebSocket server
     const ws = new WebSocket("wss://rppg-stanford-backend.fly.dev/ws");
@@ -66,8 +61,6 @@ class App extends React.Component {
       console.log("Connected to the WebSocket server");
     };
     ws.onmessage = (event) => {
-      // todo;
-      console.log(typeof event.data);
       const data = JSON.parse(event.data);
       if (data.bpm !== -1) {
         this.setState({ bpm: data.bpm, done: true });
@@ -75,7 +68,7 @@ class App extends React.Component {
         this.setState({ ppg: data.graph });
       }
     };
-    this.setState({ loaded: true, ws });
+    this.setState({ loaded: true, ws, blur: new window.cv.Mat() });
   }
 
   onPlay = async () => {
@@ -95,11 +88,11 @@ class App extends React.Component {
 
       let src = window.cv.matFromImageData(res);
 
-      window.cv.medianBlur(src, blur, 3);
+      window.cv.medianBlur(src, this.state.blur, 3);
       let imgData = new ImageData(
-        new Uint8ClampedArray(blur.data),
-        blur.cols,
-        blur.rows
+        new Uint8ClampedArray(this.state.blur.data),
+        this.state.blur.cols,
+        this.state.blur.rows
       );
 
       var out = toRGB(imgData.data, imgData.width, imgData.height);
