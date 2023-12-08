@@ -33,6 +33,7 @@ const defaultState = {
   }),
   rr: -1,
   blur: null,
+  socketConnected: false,
 };
 
 async function initFaceApi() {
@@ -59,6 +60,7 @@ class App extends React.Component {
     const ws = new WebSocket("wss://rppg-stanford-backend.fly.dev/ws");
     ws.onopen = () => {
       console.log("Connected to the WebSocket server");
+      this.setState({ socketConnected: true });
     };
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
@@ -151,7 +153,7 @@ class App extends React.Component {
           <div className="videoContainer">
             <div className="title">
               <div>Remote Photoplethysmography Demo</div>
-              {this.state.done && (
+              {/* {this.state.done && (
                 <Button
                   size="small"
                   primary
@@ -167,7 +169,7 @@ class App extends React.Component {
                   Re-take
                   <Icon name="right arrow" />
                 </Button>
-              )}
+              )} */}
               {!this.state.started && (
                 <Button
                   size="small"
@@ -179,6 +181,7 @@ class App extends React.Component {
                   icon
                   labelPosition="right"
                   positive
+                  loading={!this.state.socketConnected && !this.state.loaded}
                 >
                   Start
                   <Icon name="right arrow" />
