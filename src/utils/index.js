@@ -20,8 +20,8 @@ export async function initCamera(cameraEl) {
     stream = await navigator.mediaDevices.getUserMedia({
       video: {
         facingMode: "user",
-        width: { exact: cameraEl.width },
-        height: { exact: cameraEl.height },
+        width: { exact: cameraEl.width, ideal: 500 },
+        height: { exact: cameraEl.height, ideal: 400 },
       },
       audio: false,
     });
@@ -32,7 +32,7 @@ export async function initCamera(cameraEl) {
     throw new Error("Could not obtain video from webcam.");
   }
   cameraEl.srcObject = stream;
-  cameraEl.play();
+  await cameraEl.play();
 }
 
 export function toRGB(data) {
