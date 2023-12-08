@@ -29,6 +29,7 @@ const defaultState = {
   rr: -1,
   blur: null,
   socketConnected: false,
+  mobilePermissionsGranted: false,
 };
 
 async function initFaceApi() {
@@ -37,11 +38,51 @@ async function initFaceApi() {
   await faceapi.nets.faceLandmark68Net.loadFromUri("/weights");
 }
 
+async function checkCameraPermission() {
+  try {
+    const permissionStatus = await navigator.permissions.query({
+      name: "camera",
+    });
+
+    if (permissionStatus.state === "granted") {
+      console.log("Camera permission granted.");
+      return true;
+    } else if (permissionStatus.state === "prompt") {
+      console.log(
+        "Camera permission is not granted yet, but the user will be prompted."
+      );
+      return false;
+    } else if (permissionStatus.state === "denied") {
+      console.log("Camera permission denied.");
+      return false;
+    }
+  } catch (error) {
+    console.error("Error checking camera permission:", error);
+    return false;
+  }
+}
+
+function isMobileBrowser() {
+  const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+
+  // Checks for iOS devices
+  if (/iPad|iPhone|iPod/.test(userAgent) && !window.MSStream) {
+    return true;
+  }
+
+  // Checks for Android devices
+  if (/android/i.test(userAgent)) {
+    return true;
+  }
+
+  return false;
+}
+
 class App extends React.Component {
   counter = 0;
   state = defaultState;
 
-  async componentDidMount() {
+  initialize = async () => {
     console.log("Loading assets");
     window.faceapi = faceapi;
     this.video = document.getElementById("inputVideo");
@@ -49,7 +90,8 @@ class App extends React.Component {
 
     console.log("All Assets Loaded");
     await initFaceApi();
-    initCamera(this.video);
+
+    await initCamera(this.video);
 
     // Connect to WebSocket server
     const ws = new WebSocket("wss://rppg-stanford-backend.fly.dev/ws");
@@ -66,6 +108,12 @@ class App extends React.Component {
       }
     };
     this.setState({ loaded: true, ws, blur: new window.cv.Mat() });
+  };
+
+  async componentDidMount() {
+    if (!isMobileBrowser()) {
+      this.initialize();
+    }
   }
 
   onPlay = async () => {
@@ -148,6 +196,22 @@ class App extends React.Component {
           <div className="videoContainer">
             <div className="title">
               <div>Remote Photoplethysmography Demo</div>
+              {isMobileBrowser() && !this.state.mobilePermissionsGranted && (
+                <Button
+                  size="small"
+                  primary
+                  onClick={async () => {
+                    await this.initialize();
+                    this.setState({ mobilePermissionsGranted: true });
+                  }}
+                  icon
+                  labelPosition="right"
+                  secondary
+                >
+                  Provide Permissions
+                  <Icon name="right arrow" />
+                </Button>
+              )}
               {/* {this.state.done && (
                 <Button
                   size="small"
