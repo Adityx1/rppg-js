@@ -1,34 +1,41 @@
 import * as faceapi from "face-api.js";
 import React from "react";
 import "./App.css";
-// import { POS } from "./rppg";
+import { Progress, Button, Icon, Placeholder } from "semantic-ui-react";
+import { POS } from "./rppg";
 
 import _ from "lodash";
-import { Bar, Line } from "react-chartjs-2";
+import { Line } from "react-chartjs-2";
 import styled from "styled-components";
 import { initCamera, toRGB } from "./utils";
 import { mean } from "mathjs";
+import AnimatedNumbers from "react-animated-numbers";
 
-let dst = new window.cv.Mat();
 let blur = new window.cv.Mat();
 
 const Chart = styled.div`
-  height: 200px;
+  ${"" /* height: 500px; */}
   width: 30vw;
 `;
 
-const ChartDiv = styled.div`
-  display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  width: 100vw;
-`;
+const SIGNAL_WINDOW = 64;
 
-const ColDiv = styled.div`
-  display: flex;
-  flex-direction: column;
-  text-align: center;
-`;
+const defaultState = {
+  loaded: false,
+  ppg: [],
+  bpm: -1,
+  ws: null,
+  counter: 0,
+  done: false,
+  started: false,
+  signal: new Array(2 * SIGNAL_WINDOW).fill({
+    time: 0,
+    R: 0,
+    B: 0,
+    G: 0,
+  }),
+  rr: -1,
+};
 
 async function initFaceApi() {
   await faceapi.nets.ssdMobilenetv1.loadFromUri("/weights");
@@ -38,23 +45,7 @@ async function initFaceApi() {
 
 class App extends React.Component {
   counter = 0;
-  signalWindow = 64;
-  state = {
-    loaded: false,
-    signal: new Array(2 * this.signalWindow).fill({
-      time: 0,
-      R: 0,
-      B: 0,
-      G: 0,
-    }),
-    H: new Array(2 * this.signalWindow).fill(0),
-    spectrum: {
-      freq: new Array(this.signalWindow).fill(0),
-      values: new Array(this.signalWindow).fill(0),
-    },
-    bpm: -1,
-    ws: null,
-  };
+  state = defaultState;
 
   async componentDidMount() {
     console.log("Loading assets");
@@ -65,19 +56,25 @@ class App extends React.Component {
     console.log("All Assets Loaded");
     await initFaceApi();
     initCamera(this.video);
-    this.video.addEventListener("playing", () => {
-      this.onPlay();
-      console.log("Playing");
-    });
+    // this.video.addEventListener("playing", () => {
+    // this.onPlay();
+    // console.log("Playing");
+    // });
 
     // Connect to WebSocket server
-    const ws = new WebSocket("ws://localhost:8000/ws");
+    const ws = new WebSocket("wss://rppg-stanford-backend.fly.dev/ws");
     ws.onopen = () => {
       console.log("Connected to the WebSocket server");
     };
     ws.onmessage = (event) => {
       // todo;
-      console.log(event.data);
+      console.log(typeof event.data);
+      const data = JSON.parse(event.data);
+      if (data.bpm !== -1) {
+        this.setState({ bpm: data.bpm, done: true });
+      } else {
+        this.setState({ ppg: data.graph });
+      }
     };
     this.setState({ loaded: true, ws });
   }
@@ -86,9 +83,7 @@ class App extends React.Component {
     let R = [],
       G = [],
       B = [];
-    const start = Date.now();
     let results = await faceapi.detectAllFaces(this.video);
-    const end = Date.now() - start;
     if (results.length > 0) {
       const dims = faceapi.matchDimensions(this.canvas, this.video, true);
       results = faceapi.resizeResults(results, dims);
@@ -113,27 +108,38 @@ class App extends React.Component {
       G = mean(out[1]);
       B = mean(out[2]);
       const _signal = [B, G, R];
-      console.log("[signal]", _signal);
       var signal = this.state.signal;
-      this.state.ws.send(JSON.stringify({ data: _signal }));
-      signal.push(_signal);
+      signal.push({
+        R,
+        G,
+        B,
+      });
       signal.shift();
-      this.counter++;
+      this.state.ws.send(JSON.stringify({ data: _signal }));
+      this.setState({ counter: this.state.counter + 1 });
     }
-    setTimeout(() => {
-      this.onPlay();
-    });
+    if (!this.state.done) {
+      setTimeout(() => {
+        this.onPlay();
+      });
+    } else {
+      let out = POS(this.state.signal, SIGNAL_WINDOW);
+      console.log({ out });
+      this.setState({
+        rr: out[3],
+      });
+    }
   };
 
   chartOptions = (label, dataSrc, color) => {
     let data = {
-      labels: _.range(0, 2 * this.signalWindow),
+      labels: _.range(0, 500),
       datasets: [
         {
           label: label,
           fill: false,
           lineTension: 0.4,
-          backgroundColor: "rgba(75,192,192,0.4)",
+          backgroundColor: "rgba(255, 58, 58, 1)",
           borderColor: color,
           borderCapStyle: "butt",
           pointRadius: 1,
@@ -146,80 +152,112 @@ class App extends React.Component {
   };
 
   render() {
-    let fftData = {
-      labels: this.state.spectrum.freq,
-      datasets: [
-        {
-          label: "FFT",
-          barPercentage: 0.5,
-          barThickness: 6,
-          maxBarThickness: 8,
-          minBarLength: 2,
-          data: this.state.spectrum.values,
-        },
-      ],
-    };
     return (
-      <div>
-        <div className="App">
-          <div style={{ position: "relative" }}>
-            <video
-              id="inputVideo"
-              height="500px"
-              width="900px"
-              autoPlay
-              muted
-            ></video>
-            <canvas
-              id="overlay"
-              style={{ position: "relative", marginTop: "-900px" }}
-            />
+      <div className="App">
+        <div className="innerContainer">
+          <div className="videoContainer">
+            <div className="title">
+              <div>Remote Photoplethysmography Demo</div>
+              {this.state.done && (
+                <Button
+                  size="small"
+                  primary
+                  onClick={() => {
+                    this.setState(defaultState);
+                    this.onPlay();
+                    this.setState({ started: true });
+                  }}
+                  icon
+                  labelPosition="right"
+                  positive
+                >
+                  Re-take
+                  <Icon name="right arrow" />
+                </Button>
+              )}
+              {!this.state.started && (
+                <Button
+                  size="small"
+                  primary
+                  onClick={() => {
+                    this.onPlay();
+                    this.setState({ started: true });
+                  }}
+                  icon
+                  labelPosition="right"
+                  positive
+                >
+                  Start
+                  <Icon name="right arrow" />
+                </Button>
+              )}
+            </div>
+            <div style={{ position: "relative" }}>
+              <video
+                id="inputVideo"
+                height="500px"
+                width={`${window.innerWidth * 0.58}px`}
+                autoPlay
+                muted
+              ></video>
+              <canvas
+                id="overlay"
+                style={{ position: "relative", marginTop: "-900px" }}
+              />
+            </div>
+            <div style={{ width: "97%" }}>
+              <Progress
+                progress
+                fluid
+                percent={this.state.counter / 10}
+                indicating
+              >
+                {this.state.started
+                  ? this.state.counter < 1000
+                    ? "Calculating.."
+                    : "Done"
+                  : ""}
+              </Progress>
+            </div>
           </div>
-
-          <ColDiv>
+          <div className="chartContainer">
             <Chart>
               <Line
                 data={this.chartOptions(
-                  "HB",
-                  this.state.H,
-                  "rgba(167, 0, 100, 1)"
+                  "PPG Signal",
+                  this.state.ppg,
+                  "rgb(255, 58, 58)"
                 )}
               />
             </Chart>
-            <Chart>
-              <Bar data={fftData} />
-            </Chart>
-          </ColDiv>
+            <div className="metric-outer-container">
+              <div className="metric-title">Heart Rate</div>
+              {this.state.bpm !== -1 ? (
+                <div className="metric-inner-container">
+                  <span className="metric">{this.state.bpm.toFixed(0)}</span>
+                  <span className="units">bpm</span>
+                </div>
+              ) : (
+                <Placeholder>
+                  <Placeholder.Line length="very short" />
+                </Placeholder>
+              )}
+            </div>
+            <div className="metric-outer-container">
+              <div className="metric-title title-blue">Respiratory Rate</div>
+              {this.state.bpm !== -1 ? (
+                <div className="metric-inner-container">
+                  <span className="metric">{this.state.rr.toFixed(0)}</span>
+                  <span className="units">bpm</span>
+                </div>
+              ) : (
+                <Placeholder>
+                  <Placeholder.Line length="very short" />
+                </Placeholder>
+              )}
+            </div>
+          </div>
         </div>
-        <ChartDiv>
-          <Chart>
-            <Line
-              data={this.chartOptions(
-                "Red",
-                this.state.signal.map((s) => s["R"]),
-                "rgba(255,0,0,1)"
-              )}
-            />
-          </Chart>
-          <Chart>
-            <Line
-              data={this.chartOptions(
-                "Green",
-                this.state.signal.map((s) => s["G"]),
-                "rgba(0,255,110,1)"
-              )}
-            />
-          </Chart>
-          <Chart>
-            <Line
-              data={this.chartOptions(
-                "Blue",
-                this.state.signal.map((s) => s["B"]),
-                "rgba(0,0,255,1)"
-              )}
-            />
-          </Chart>
-        </ChartDiv>
       </div>
     );
   }
