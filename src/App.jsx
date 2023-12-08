@@ -38,30 +38,6 @@ async function initFaceApi() {
   await faceapi.nets.faceLandmark68Net.loadFromUri("/weights");
 }
 
-async function checkCameraPermission() {
-  try {
-    const permissionStatus = await navigator.permissions.query({
-      name: "camera",
-    });
-
-    if (permissionStatus.state === "granted") {
-      console.log("Camera permission granted.");
-      return true;
-    } else if (permissionStatus.state === "prompt") {
-      console.log(
-        "Camera permission is not granted yet, but the user will be prompted."
-      );
-      return false;
-    } else if (permissionStatus.state === "denied") {
-      console.log("Camera permission denied.");
-      return false;
-    }
-  } catch (error) {
-    console.error("Error checking camera permission:", error);
-    return false;
-  }
-}
-
 function isMobileBrowser() {
   const userAgent = navigator.userAgent || navigator.vendor || window.opera;
 
@@ -264,6 +240,7 @@ class App extends React.Component {
                 }px`}
                 autoPlay
                 muted
+                playsInline
               ></video>
               <canvas
                 id="overlay"
