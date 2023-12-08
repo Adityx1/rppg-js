@@ -20,8 +20,8 @@ export async function initCamera(cameraEl) {
     stream = await navigator.mediaDevices.getUserMedia({
       video: {
         facingMode: "user",
-        width: { exact: cameraEl.width, ideal: 500 },
-        height: { exact: cameraEl.height, ideal: 400 },
+        width: { ideal: 700 },
+        height: { ideal: 600 },
       },
       audio: false,
     });
