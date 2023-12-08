@@ -104,21 +104,27 @@ button:focus-visible {
   margin-right: 0.2rem;
 }
 
-/* @media screen and (max-width: 600px) {
+.chart {
+  width: 30vw;
+}
+
+@media screen and (max-width: 600px) {
   .innerContainer {
     flex-direction: column;
   }
-} */
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
+  .title {
+    width: 90vw;
+    /* padding: 0 1rem; */
   }
-  a:hover {
-    color: #747bff;
+  .videoContainer {
+    width: 95vw;
+    margin-top: 40vh;
+    padding: 0 1rem;
   }
-  button {
-    background-color: #f9f9f9;
+  .App {
+    width: 100%;
+  }
+  .chart {
+    width: 95vw;
   }
 }

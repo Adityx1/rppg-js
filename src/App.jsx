@@ -6,13 +6,8 @@ import { POS } from "./rppg";
 
 import _ from "lodash";
 import { Line } from "react-chartjs-2";
-import styled from "styled-components";
 import { initCamera, toRGB } from "./utils";
 import { mean } from "mathjs";
-
-const Chart = styled.div`
-  width: 30vw;
-`;
 
 const SIGNAL_WINDOW = 64;
 
@@ -191,8 +186,16 @@ class App extends React.Component {
             <div style={{ position: "relative" }}>
               <video
                 id="inputVideo"
-                height="500px"
-                width={`${window.innerWidth * 0.58}px`}
+                height={`${
+                  window.innerWidth > 600
+                    ? window.innerHeight * 0.5
+                    : window.innerHeight * 0.4
+                }px`}
+                width={`${
+                  window.innerWidth > 600
+                    ? window.innerWidth * 0.58
+                    : window.innerWidth * 0.9
+                }px`}
                 autoPlay
                 muted
               ></video>
@@ -217,7 +220,7 @@ class App extends React.Component {
             </div>
           </div>
           <div className="chartContainer">
-            <Chart>
+            <div className="chart">
               <Line
                 data={this.chartOptions(
                   "PPG Signal",
@@ -225,7 +228,7 @@ class App extends React.Component {
                   "rgb(255, 58, 58)"
                 )}
               />
-            </Chart>
+            </div>
             <div className="metric-outer-container">
               <div className="metric-title">
                 Heart Rate (PPG Peak Detection)
