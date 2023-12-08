@@ -1,39 +1,144 @@
-import { useEffect, useRef, useState } from "react";
-import { average } from "./utils";
-import { fastICA } from "./utils/fastICA";
+import * as faceapi from "face-api.js";
+import React from "react";
+import "./App.css";
+import { Progress, Button, Icon, Placeholder } from "semantic-ui-react";
+import { POS } from "./rppg";
+
+import _ from "lodash";
 import { Line } from "react-chartjs-2";
-import { range } from "lodash";
+import styled from "styled-components";
+import { initCamera, toRGB } from "./utils";
+import { mean } from "mathjs";
 
-const arr = [];
-const width = 640;
-const height = 480;
-let src = new window.cv.Mat(height, width, window.cv.CV_8UC4);
-let dst = new window.cv.Mat(height, width, window.cv.CV_8UC1);
-let blur = new window.cv.Mat(height, width, window.cv.CV_8UC1);
-let bgr = new window.cv.Mat();
-let hsv = new window.cv.Mat();
-let hls = new window.cv.Mat();
-let hsvSplit = new window.cv.MatVector();
-let hlsSplit = new window.cv.MatVector();
-let bgrSplit = new window.cv.MatVector();
+let blur = new window.cv.Mat();
 
-function App() {
-  const [isReady, setIsReady] = useState(false);
-  const [signal, setSignal] = useState([]);
-  const [frameCount, setFrameCount] = useState(0);
-  const [fps, setFps] = useState(0);
+const Chart = styled.div`
+  ${"" /* height: 500px; */}
+  width: 30vw;
+`;
 
-  const videoRef = useRef(null);
+const SIGNAL_WINDOW = 64;
 
-  const chartOptions = (label, dataSrc, color) => {
+const defaultState = {
+  loaded: false,
+  ppg: [],
+  bpm: -1,
+  ws: null,
+  counter: 0,
+  done: false,
+  started: false,
+  signal: new Array(2 * SIGNAL_WINDOW).fill({
+    time: 0,
+    R: 0,
+    B: 0,
+    G: 0,
+  }),
+  rr: -1,
+};
+
+async function initFaceApi() {
+  await faceapi.nets.ssdMobilenetv1.loadFromUri("/weights");
+  await faceapi.nets.faceRecognitionNet.loadFromUri("/weights");
+  await faceapi.nets.faceLandmark68Net.loadFromUri("/weights");
+}
+
+class App extends React.Component {
+  counter = 0;
+  state = defaultState;
+
+  async componentDidMount() {
+    console.log("Loading assets");
+    window.faceapi = faceapi;
+    this.video = document.getElementById("inputVideo");
+    this.canvas = document.getElementById("overlay");
+
+    console.log("All Assets Loaded");
+    await initFaceApi();
+    initCamera(this.video);
+    // this.video.addEventListener("playing", () => {
+    // this.onPlay();
+    // console.log("Playing");
+    // });
+
+    // Connect to WebSocket server
+    const ws = new WebSocket("wss://rppg-stanford-backend.fly.dev/ws");
+    ws.onopen = () => {
+      console.log("Connected to the WebSocket server");
+    };
+    ws.onmessage = (event) => {
+      // todo;
+      console.log(typeof event.data);
+      const data = JSON.parse(event.data);
+      if (data.bpm !== -1) {
+        this.setState({ bpm: data.bpm, done: true });
+      } else {
+        this.setState({ ppg: data.graph });
+      }
+    };
+    this.setState({ loaded: true, ws });
+  }
+
+  onPlay = async () => {
+    let R = [],
+      G = [],
+      B = [];
+    let results = await faceapi.detectAllFaces(this.video);
+    if (results.length > 0) {
+      const dims = faceapi.matchDimensions(this.canvas, this.video, true);
+      results = faceapi.resizeResults(results, dims);
+      const canvases = await faceapi.extractFaces(this.video, results);
+      faceapi.draw.drawDetections(this.canvas, results);
+
+      const res = canvases[0]
+        .getContext("2d")
+        .getImageData(0, 0, canvases[0].width, canvases[0].height);
+
+      let src = window.cv.matFromImageData(res);
+
+      window.cv.medianBlur(src, blur, 3);
+      let imgData = new ImageData(
+        new Uint8ClampedArray(blur.data),
+        blur.cols,
+        blur.rows
+      );
+
+      var out = toRGB(imgData.data, imgData.width, imgData.height);
+      R = mean(out[0]);
+      G = mean(out[1]);
+      B = mean(out[2]);
+      const _signal = [B, G, R];
+      var signal = this.state.signal;
+      signal.push({
+        R,
+        G,
+        B,
+      });
+      signal.shift();
+      this.state.ws.send(JSON.stringify({ data: _signal }));
+      this.setState({ counter: this.state.counter + 1 });
+    }
+    if (!this.state.done) {
+      setTimeout(() => {
+        this.onPlay();
+      });
+    } else {
+      let out = POS(this.state.signal, SIGNAL_WINDOW);
+      console.log({ out });
+      this.setState({
+        rr: out[3],
+      });
+    }
+  };
+
+  chartOptions = (label, dataSrc, color) => {
     let data = {
-      labels: range(0, dataSrc.length),
+      labels: _.range(0, 500),
       datasets: [
         {
           label: label,
           fill: false,
           lineTension: 0.4,
-          backgroundColor: "rgba(75,192,192,0.4)",
+          backgroundColor: "rgba(255, 58, 58, 1)",
           borderColor: color,
           borderCapStyle: "butt",
           pointRadius: 1,
@@ -45,111 +150,116 @@ function App() {
     return data;
   };
 
-  useEffect(() => {
-    if (window.cv && window.cv.imread) {
-      setIsReady(true);
-    } else {
-      window.Module = {
-        onRuntimeInitialized: () => {
-          setIsReady(true);
-        },
-      };
-    }
-
-    let video = document.getElementById("videoInput"); // video is the id of video tag
-    navigator.mediaDevices
-      .getUserMedia({ video: true, audio: false })
-      .then(function (stream) {
-        video.srcObject = stream;
-        video.play();
-        let cap = new window.cv.VideoCapture(video);
-
-        setInterval(() => {
-          processVideo(cap);
-        }, 1);
-
-        setInterval(() => {
-          setFps(frameCount);
-          setFrameCount(0);
-        }, 1000);
-      })
-      .catch(function (err) {
-        console.log("An error occurred! " + err);
-      });
-
-    return () => {
-      src.delete();
-      dst.delete();
-      blur.delete();
-      bgr.delete();
-      hsv.delete();
-      hls.delete();
-      bgrSplit.delete();
-      hsvSplit.delete();
-      hlsSplit.delete();
-    };
-  }, []);
-
-  const processVideo = async (videoCapture) => {
-    try {
-      videoCapture.read(src);
-      window.cv.medianBlur(src, blur, 3);
-      window.cv.cvtColor(blur, dst, window.cv.COLOR_RGBA2GRAY);
-      window.cv.cvtColor(blur, bgr, window.cv.COLOR_RGBA2BGR);
-      window.cv.split(bgr, bgrSplit);
-
-      let avgArr = [];
-
-      const bgrCh0 = average(bgrSplit.get(0).data);
-      const bgrCh1 = average(bgrSplit.get(1).data);
-      const bgrCh2 = average(bgrSplit.get(2).data);
-
-      avgArr = [
-        bgrCh0,
-        bgrCh1,
-        bgrCh2,
-        // hlsCh0,
-        // hlsCh1,
-        // hlsCh2,
-        // hsvCh0,
-        // hsvCh1,
-        // hsvCh2,
-      ];
-
-      arr.push(avgArr);
-
-      console.log(arr.length);
-
-      try {
-        if (arr.length == 120) {
-          let ica = fastICA(arr.slice(20, arr.length), {
-            maxIterations: 1000,
-            debug: true,
-          });
-          console.log(ica.weights);
-          setSignal(ica.source.map((s) => s[2]));
-        }
-      } catch (error) {
-        console.error(error);
-      }
-
-      // window.cv.imshow("canvasOutput", blur);
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
-  return (
-    <div>
-      <video ref={videoRef} width="640" height="480" id="videoInput" />
-      <canvas id="canvasOutput" width="640" height="480"></canvas>
-      {isReady && <button onClick={processVideo}>Process Video</button>}
-      <div>FPS: {fps}</div>
-      <div style={{ height: "400px", width: "400px" }}>
-        <Line data={chartOptions("HB", signal, "rgba(167, 0, 100, 1)")} />
+  render() {
+    return (
+      <div className="App">
+        <div className="innerContainer">
+          <div className="videoContainer">
+            <div className="title">
+              <div>Remote Photoplethysmography Demo</div>
+              {this.state.done && (
+                <Button
+                  size="small"
+                  primary
+                  onClick={() => {
+                    this.setState(defaultState);
+                    this.onPlay();
+                    this.setState({ started: true });
+                  }}
+                  icon
+                  labelPosition="right"
+                  positive
+                >
+                  Re-take
+                  <Icon name="right arrow" />
+                </Button>
+              )}
+              {!this.state.started && (
+                <Button
+                  size="small"
+                  primary
+                  onClick={() => {
+                    this.onPlay();
+                    this.setState({ started: true });
+                  }}
+                  icon
+                  labelPosition="right"
+                  positive
+                >
+                  Start
+                  <Icon name="right arrow" />
+                </Button>
+              )}
+            </div>
+            <div style={{ position: "relative" }}>
+              <video
+                id="inputVideo"
+                height="500px"
+                width={`${window.innerWidth * 0.58}px`}
+                autoPlay
+                muted
+              ></video>
+              <canvas
+                id="overlay"
+                style={{ position: "relative", marginTop: "-900px" }}
+              />
+            </div>
+            <div style={{ width: "97%" }}>
+              <Progress
+                progress
+                fluid
+                percent={this.state.counter / 10}
+                indicating
+              >
+                {this.state.started
+                  ? this.state.counter < 1000
+                    ? "Calculating.."
+                    : "Done"
+                  : ""}
+              </Progress>
+            </div>
+          </div>
+          <div className="chartContainer">
+            <Chart>
+              <Line
+                data={this.chartOptions(
+                  "PPG Signal",
+                  this.state.ppg,
+                  "rgb(255, 58, 58)"
+                )}
+              />
+            </Chart>
+            <div className="metric-outer-container">
+              <div className="metric-title">Heart Rate</div>
+              {this.state.bpm !== -1 ? (
+                <div className="metric-inner-container">
+                  <span className="metric">{this.state.bpm.toFixed(0)}</span>
+                  <span className="units">bpm</span>
+                </div>
+              ) : (
+                <Placeholder>
+                  <Placeholder.Line length="very short" />
+                </Placeholder>
+              )}
+            </div>
+            <div className="metric-outer-container">
+              <div className="metric-title title-blue">Respiratory Rate</div>
+              {this.state.bpm !== -1 ? (
+                <div className="metric-inner-container">
+                  <span className="metric">{this.state.rr.toFixed(0)}</span>
+                  <span className="units">bpm</span>
+                </div>
+              ) : (
+                <Placeholder>
+                  <Placeholder.Line length="very short" />
+                </Placeholder>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
-  );
+    );
+  }
 }
 
 export default App;
