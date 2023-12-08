@@ -67,13 +67,10 @@ class App extends React.Component {
   state = defaultState;
 
   initialize = async () => {
-    console.log("Loading assets");
-    window.faceapi = faceapi;
     this.video = document.getElementById("inputVideo");
     this.canvas = document.getElementById("overlay");
 
     console.log("All Assets Loaded");
-    await initFaceApi();
 
     // Connect to WebSocket server
     const ws = new WebSocket("wss://rppg-stanford-backend.fly.dev/ws");
@@ -93,6 +90,9 @@ class App extends React.Component {
   };
 
   async componentDidMount() {
+    console.log("Loading assets");
+    window.faceapi = faceapi;
+    await initFaceApi();
     if (!isMobileBrowser()) {
       const video = document.getElementById("inputVideo");
       await initCamera(video);
