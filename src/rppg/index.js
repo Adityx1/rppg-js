@@ -1,15 +1,6 @@
 import * as math from "mathjs";
 import { fft, util as fftUtil } from "fft-js";
-// var fft = require("fft-js").fft,
-// fftUtil = require("fft-js").util;
-// import Fili from "fili";
-
-// var Fili = require("fili");
-
-// var ts = require("timeseries-analysis");
 import ts from "timeseries-analysis";
-
-// const lowPassFilter = require("low-pass-filter").lowPassFilter;
 import { lowPassFilter } from "low-pass-filter";
 
 /**

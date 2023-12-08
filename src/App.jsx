@@ -13,7 +13,6 @@ import { mean } from "mathjs";
 let blur = new window.cv.Mat();
 
 const Chart = styled.div`
-  ${"" /* height: 500px; */}
   width: 30vw;
 `;
 
@@ -23,6 +22,7 @@ const defaultState = {
   loaded: false,
   ppg: [],
   bpm: -1,
+  bpm2: -1,
   ws: null,
   counter: 0,
   done: false,
@@ -125,6 +125,7 @@ class App extends React.Component {
       let out = POS(this.state.signal, SIGNAL_WINDOW);
       console.log({ out });
       this.setState({
+        bpm2: out[2],
         rr: out[3],
       });
     }
@@ -230,10 +231,25 @@ class App extends React.Component {
               />
             </Chart>
             <div className="metric-outer-container">
-              <div className="metric-title">Heart Rate</div>
+              <div className="metric-title">
+                Heart Rate (PPG Peak Detection)
+              </div>
               {this.state.bpm !== -1 ? (
                 <div className="metric-inner-container">
                   <span className="metric">{this.state.bpm.toFixed(0)}</span>
+                  <span className="units">bpm</span>
+                </div>
+              ) : (
+                <Placeholder>
+                  <Placeholder.Line length="very short" />
+                </Placeholder>
+              )}
+            </div>
+            <div className="metric-outer-container">
+              <div className="metric-title">Heart Rate (POS)</div>
+              {this.state.bpm !== -1 ? (
+                <div className="metric-inner-container">
+                  <span className="metric">{this.state.bpm2.toFixed(0)}</span>
                   <span className="units">bpm</span>
                 </div>
               ) : (
