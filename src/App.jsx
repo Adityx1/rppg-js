@@ -218,7 +218,7 @@ class App extends React.Component {
                   icon
                   labelPosition="right"
                   positive
-                  loading={!this.state.socketConnected && !this.state.loaded}
+                  loading={!this.state.socketConnected || !this.state.loaded}
                 >
                   Start
                   <Icon name="right arrow" />
