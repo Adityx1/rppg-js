@@ -1,7 +1,14 @@
 import * as faceapi from "face-api.js";
 import React from "react";
 import "./App.css";
-import { Progress, Button, Icon, Placeholder } from "semantic-ui-react";
+import {
+  Progress,
+  Button,
+  Icon,
+  Placeholder,
+  Modal,
+  List,
+} from "semantic-ui-react";
 import { POS } from "./rppg";
 
 import _ from "lodash";
@@ -30,6 +37,7 @@ const defaultState = {
   blur: null,
   socketConnected: false,
   mobilePermissionsGranted: false,
+  openInstructionsModal: false,
 };
 
 async function initFaceApi() {
@@ -168,62 +176,81 @@ class App extends React.Component {
   render() {
     return (
       <div className="App">
+        <Modal
+          open={this.state.openInstructionsModal}
+          onClose={() => {
+            this.setState({
+              openInstructionsModal: false,
+            });
+          }}
+          closeIcon
+        >
+          <Modal.Header>Instructions</Modal.Header>
+          <Modal.Content>
+            <List bulleted>
+              <List.Item>
+                Be in a well lit environment with a light source directly on
+                your face.
+              </List.Item>
+              <List.Item>Be static during the recording.</List.Item>
+              <List.Item>
+                Place your face as close to the camera as possible.{" "}
+              </List.Item>
+            </List>
+          </Modal.Content>
+        </Modal>
         <div className="innerContainer">
           <div className="videoContainer">
             <div className="title">
               <div>Remote Photoplethysmography Demo</div>
-              {isMobileBrowser() && !this.state.mobilePermissionsGranted && (
+              <div className="action">
                 <Button
+                  basic
                   size="small"
-                  primary
-                  onClick={async () => {
-                    const video = document.getElementById("inputVideo");
-                    await initCamera(video);
-                    await this.initialize();
-                    this.setState({ mobilePermissionsGranted: true });
-                  }}
-                  icon
-                  labelPosition="right"
-                  secondary
-                >
-                  Provide Permissions
-                  <Icon name="right arrow" />
-                </Button>
-              )}
-              {/* {this.state.done && (
-                <Button
-                  size="small"
-                  primary
                   onClick={() => {
-                    this.setState(defaultState);
-                    this.onPlay();
-                    this.setState({ started: true });
+                    this.setState({
+                      openInstructionsModal: true,
+                    });
                   }}
-                  icon
-                  labelPosition="right"
-                  positive
                 >
-                  Re-take
-                  <Icon name="right arrow" />
+                  Instructions
                 </Button>
-              )} */}
-              {!this.state.started && (
-                <Button
-                  size="small"
-                  primary
-                  onClick={() => {
-                    this.onPlay();
-                    this.setState({ started: true });
-                  }}
-                  icon
-                  labelPosition="right"
-                  positive
-                  loading={!this.state.socketConnected || !this.state.loaded}
-                >
-                  Start
-                  <Icon name="right arrow" />
-                </Button>
-              )}
+                {isMobileBrowser() && !this.state.mobilePermissionsGranted && (
+                  <Button
+                    size="small"
+                    primary
+                    onClick={async () => {
+                      const video = document.getElementById("inputVideo");
+                      await initCamera(video);
+                      await this.initialize();
+                      this.setState({ mobilePermissionsGranted: true });
+                    }}
+                    icon
+                    labelPosition="right"
+                    secondary
+                  >
+                    Provide Permissions
+                    <Icon name="right arrow" />
+                  </Button>
+                )}
+                {!this.state.started && (
+                  <Button
+                    size="small"
+                    primary
+                    onClick={() => {
+                      this.onPlay();
+                      this.setState({ started: true });
+                    }}
+                    icon
+                    labelPosition="right"
+                    positive
+                    loading={!this.state.socketConnected || !this.state.loaded}
+                  >
+                    Start
+                    <Icon name="right arrow" />
+                  </Button>
+                )}
+              </div>
             </div>
             <div style={{ position: "relative" }}>
               <video
