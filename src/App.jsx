@@ -91,8 +91,6 @@ class App extends React.Component {
     console.log("All Assets Loaded");
     await initFaceApi();
 
-    await initCamera(this.video);
-
     // Connect to WebSocket server
     const ws = new WebSocket("wss://rppg-stanford-backend.fly.dev/ws");
     ws.onopen = () => {
@@ -112,6 +110,7 @@ class App extends React.Component {
 
   async componentDidMount() {
     if (!isMobileBrowser()) {
+      await initCamera(this.video);
       this.initialize();
     }
   }
@@ -201,6 +200,7 @@ class App extends React.Component {
                   size="small"
                   primary
                   onClick={async () => {
+                    await initCamera(this.video);
                     await this.initialize();
                     this.setState({ mobilePermissionsGranted: true });
                   }}
