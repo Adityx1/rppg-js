@@ -110,7 +110,8 @@ class App extends React.Component {
 
   async componentDidMount() {
     if (!isMobileBrowser()) {
-      await initCamera(this.video);
+      const video = document.getElementById("inputVideo");
+      await initCamera(video);
       this.initialize();
     }
   }
@@ -200,7 +201,8 @@ class App extends React.Component {
                   size="small"
                   primary
                   onClick={async () => {
-                    await initCamera(this.video);
+                    const video = document.getElementById("inputVideo");
+                    await initCamera(video);
                     await this.initialize();
                     this.setState({ mobilePermissionsGranted: true });
                   }}
