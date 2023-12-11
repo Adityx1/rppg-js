@@ -20,13 +20,13 @@ import { mean } from "mathjs";
 
 const SIGNAL_WINDOW = 64;
 
-let blur = new window.cv.Mat();
-let bgr = new window.cv.Mat();
-let hsv = new window.cv.Mat();
-let hls = new window.cv.Mat();
-let hsvSplit = new window.cv.MatVector();
-let hlsSplit = new window.cv.MatVector();
-let bgrSplit = new window.cv.MatVector();
+let blur;
+let bgr;
+let hsv;
+let hls;
+let hsvSplit;
+let hlsSplit;
+let bgrSplit;
 
 const defaultState = {
   loaded: false,
@@ -83,7 +83,7 @@ class App extends React.Component {
     console.log("All Assets Loaded");
 
     // Connect to WebSocket server
-    const ws = new WebSocket("ws://localhost:8000/ws");
+    const ws = new WebSocket("wss://rppg-stanford-backend.fly.dev/ws");
     ws.onopen = () => {
       console.log("Connected to the WebSocket server");
       this.setState({ socketConnected: true });
@@ -96,6 +96,13 @@ class App extends React.Component {
         this.setState({ ppg: data.graph });
       }
     };
+    blur = new window.cv.Mat();
+    bgr = new window.cv.Mat();
+    hsv = new window.cv.Mat();
+    hls = new window.cv.Mat();
+    hlsSplit = new window.cv.MatVector();
+    hsvSplit = new window.cv.MatVector();
+    bgrSplit = new window.cv.MatVector();
     this.setState({ loaded: true, ws });
   };
 
