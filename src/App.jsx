@@ -15,6 +15,7 @@ import { POS } from "./rppg";
 import _ from "lodash";
 import { Line } from "react-chartjs-2";
 import { initCamera, toRGB } from "./utils";
+import { BlockMath, InlineMath } from "react-katex";
 import { mean } from "mathjs";
 
 const SIGNAL_WINDOW = 64;
@@ -376,6 +377,231 @@ class App extends React.Component {
                   <Placeholder.Line length="very short" />
                 </Placeholder>
               )}
+            </div>
+          </div>
+        </div>
+        <div className="docs">
+          <div className="section">
+            <div className="title">
+              The model for remote photoplethysmography
+            </div>
+            <p>
+              In order to gain a comprehensive understanding of the techniques
+              used for extracting pulses in remote photoplethysmography (rPPG),
+              it's essential to begin with a foundational rPPG model. This model
+              incorporates key optical and physiological aspects of skin
+              reflectance. By employing this model, we can delve deeply into the
+              specific challenges encountered in this field and explore the
+              various ways these challenges are tackled in different rPPG
+              approaches. Imagine a scenario where human skin, imbued with
+              pulsating blood, is illuminated by a light source, and a distant
+              color camera captures this scene, as depicted in Figure 1. It's
+              assumed here that the light source emits light of a consistent
+              spectral quality, though its intensity may fluctuate. The
+              intensity captured by the camera is influenced by the distance
+              between the light source, the skin, and the camera's sensor. The
+              skin's appearance, as recorded by the camera, displays a
+              particular color that undergoes temporal variations. These
+              variations are a result of both the movement-induced changes in
+              intensity and specular reflections, as well as the subtle color
+              shifts caused by the pulse. The degree of these temporal changes
+              is directly linked to the level of luminance intensity.
+            </p>
+            <p>
+              Utilizing the dichromatic reflection model, we can articulate the
+              reflection of each skin pixel in a recorded image sequence as a
+              function that varies over time within the RGB color space. This
+              function is expressed as:
+            </p>
+            <BlockMath>
+              C_k(t) = I(t) \cdot (v_s(t) + v_d(t)) + v_n(t),
+            </BlockMath>
+            <p>
+              where <InlineMath>C_k(t)</InlineMath> represents the RGB values of
+              the <InlineMath>{"k^{th}"}</InlineMath> skin pixel at time{" "}
+              <InlineMath>t</InlineMath>; <InlineMath> I(t) </InlineMath>
+              is the luminance intensity, absorbing changes due to the light
+              source and the varying distances between the light source, skin,
+              and camera. In the dichromatic model,{" "}
+              <InlineMath> I(t)</InlineMath> is influenced by two types of
+              reflections: specular (<InlineMath>v_s(t)</InlineMath>) and
+              diffuse (<InlineMath>v_d(t)</InlineMath>). These reflections
+              change over time due to body movements and the pulsating nature of
+              blood flow. The term <InlineMath>v_n(t)</InlineMath> accounts for
+              the camera sensor's quantization noise.
+            </p>
+            <p>
+              Specular reflection (<InlineMath>v_s(t)</InlineMath>) is akin to a
+              mirror-like reflection from the skin's surface and does not carry
+              pulsatile information. Its spectral composition mirrors that of
+              the light source and changes with body movements, affecting the
+              geometry of the light source, skin, and camera. Specular
+              reflection is defined as:
+            </p>
+            <BlockMath>v_s(t) = u_s \cdot (s_0 + s(t)),</BlockMath>
+            <p>
+              where <InlineMath>u_s </InlineMath> is the unit color vector of
+              the light spectrum, <InlineMath>s_0</InlineMath> is the constant
+              component, and <InlineMath>s(t)</InlineMath> represents the
+              motion-induced variable component of specular reflections.
+            </p>
+            <p>
+              Diffuse reflection (<InlineMath>v_d(t)</InlineMath>), on the other
+              hand, results from light absorption and scattering within the skin
+              tissues. Influenced by the concentration of hemoglobin and
+              melanin, it has a distinct chromaticity and varies with blood
+              volume changes, thus being time-dependent. It is expressed as:
+            </p>
+            <BlockMath>v_d(t) = u_d \cdot d_0 + u_p \cdot p(t),</BlockMath>
+            <p>
+              where <InlineMath>u_d</InlineMath> is the unit color vector for
+              skin tissue, <InlineMath>d_0</InlineMath> represents the constant
+              reflection strength, <InlineMath>u_p</InlineMath> the relative
+              pulsatile strengths in the RGB channels, and{" "}
+              <InlineMath>p(t)</InlineMath> the pulse signal. Integrating these
+              reflections into the initial equation, we get:
+            </p>
+            <BlockMath>
+              C_k(t) = I(t) \cdot (u_s \cdot (s_0 + s(t)) + u_d \cdot d_0 + u_p
+              \cdot p(t)) + v_n(t).
+            </BlockMath>
+            <p>
+              The constant components of specular and diffuse reflections can be
+              merged into a single term representing the static skin reflection:
+            </p>
+            <BlockMath>
+              u_c \cdot c_0 = u_s \cdot s_0 + u_d \cdot d_0,
+            </BlockMath>
+            <p>
+              where <InlineMath>u_c</InlineMath> is the unit color vector for
+              skin reflection and <InlineMath>c_0</InlineMath> the reflection
+              strength. Thus, the equation is reformulated as:
+            </p>
+            <BlockMath>
+              C_k(t) = I_0 \cdot (1 + i(t)) \cdot (u_c \cdot c_0 + u_s \cdot
+              s(t) + u_p \cdot p(t)) + v_n(t),
+            </BlockMath>
+            <p>
+              Here, <InlineMath>I(t)</InlineMath> is decomposed into a
+              stationary part <InlineMath>I_0</InlineMath> and a time-varying
+              part <InlineMath>I_0 \cdot i(t)</InlineMath>, where{" "}
+              <InlineMath> i(t), s(t) </InlineMath>, and{" "}
+              <InlineMath>p(t)</InlineMath> are signals with zero mean. It's
+              important to note that specular reflection can be the predominant
+              component, potentially overshadowing other elements. We assume the
+              existence of methods (like a skin classifier) to mitigate areas
+              where specular reflection is dominant.
+            </p>
+          </div>
+          <div className="section">
+            <img src="/media/img/model.png" alt="Reflectance Model" />
+            <div className="caption">Figure 1. The reflectance model.</div>
+          </div>
+          <div className="section">
+            <div className="title">Blind Source Separation</div>
+            <p>
+              Independent Component Analysis (ICA) is a comparatively novel
+              method for extracting independent signals from a collection of
+              observations. These observations are typically linear combinations
+              of fundamental source signals [3]. In this application, the focus
+              is on the Blood Volume Pulse (BVP), which circulates throughout
+              the human body. The cardiac cycle influences the volume of blood
+              vessels in the face, altering the path of incident light. This
+              alteration affects the reflected light, revealing the timing of
+              cardiovascular activities. By capturing a video of the face using
+              a standard webcam, the red, green, and blue (RGB) sensors detect a
+              blend of the reflected plethysmographic signal and other light
+              fluctuations caused by various artifacts. Considering the
+              different absorptivity rates of hemoglobin across the visible and
+              near-infrared spectrum [4], each RGB sensor captures a unique
+              combination of the original signals, with varying weights. These
+              captured signals from the RGB sensors are represented as{" "}
+              <InlineMath>y1(t), y2(t), </InlineMath> and{" "}
+              <InlineMath> y3(t),</InlineMath> indicating the signal amplitudes
+              at any given time <InlineMath>t</InlineMath>. The model
+              hypothesizes the existence of three primary source signals:{" "}
+              <InlineMath> x1(t), x2(t),</InlineMath> and{" "}
+              <InlineMath> x3(t)</InlineMath>. According to the ICA framework,
+              the observed signals are linear combinations of these source
+              signals, expressed as:
+            </p>
+            <BlockMath>y(t) = Ax(t)</BlockMath>
+            <p>
+              Here, the vectors{" "}
+              <InlineMath>y(t) = [y1(t), y2(t), y3(t)]^T </InlineMath> and{" "}
+              <InlineMath> x(t) = [x1(t), x2(t), x3(t)]^T </InlineMath>, while
+              the <InlineMath>3x3</InlineMath> matrix <InlineMath>A</InlineMath>{" "}
+              contains the coefficients of the mixtures. The objective of ICA is
+              to determine a demixing matrix <InlineMath>W</InlineMath>, which
+              approximates the inverse of <InlineMath>A</InlineMath>. The output
+              of this process,
+            </p>
+            <BlockMath>{"\\hat{x}(t) = Wy(t)"}</BlockMath>
+            <p>
+              provides an estimation of the vector <InlineMath>x(t)</InlineMath>
+              , which encompasses the underlying source signals.
+            </p>
+          </div>
+          <div className="section">
+            <img src="/media/img/outline.png" alt="Reflectance Model" />
+            <div className="caption">Figure 2. The reflectance model.</div>
+          </div>
+          <div className="section">
+            <p>
+              To perform remote heart rate (HR) measurement, we adhere to a
+              process similar to what is depicted in Figure 2. The procedure
+              begins with a digital camera recording a video of the individual.
+              Subsequently, a facial recognition algorithm, like the{" "}
+              <a href="https://github.com/justadudewhohacks/face-api.js">
+                68 face landmark net
+              </a>
+              , is employed to determine the facial bounding box coordinates.
+              Following this, specific regions of interest (ROIs) on the face,
+              such as the cheeks, are chosen for their strong signal presence.
+              The pixel data from these ROIs are then utilized for remote
+              photoplethysmography (rPPG) signal extraction. The final step in
+              estimating the HR involves additional post-processing, which
+              generally includes frequency analysis and the identification of
+              signal peaks.
+            </p>
+          </div>
+          <div className="section">
+            <div className="title">Plane Orthogonal To Skin (POS)</div>
+            <p>
+              The plane-orthogonal-to-skin (POS) method uses the plane
+              orthogonal to the skin tone in the RGB signal to extract the rPPG
+              signal. The method is described in detail in [1].
+            </p>
+          </div>
+          <div className="section">
+            <img src="/media/img/pos-algorithm.png" className="small" />
+            <div className="caption">
+              Figure 3. Plane-Orthogonal-To-Skin Algorithm.
+            </div>
+          </div>
+          <div className="references section">
+            <div className="title">References</div>
+            <div className="reference">
+              [1] Wang, W., den Brinker, A. C., Stuijk, S., & de Haan, G.
+              (2017). Algorithmic principles of remote-PPG. IEEE Transactions on
+              Biomedical Engineering, 64(7), 1479-1491. Article 7565547.
+              https://doi.org/10.1109/TBME.2016.2609282
+            </div>
+            <div className="reference">
+              [2] Cheng, Chun-Hong & Wong, Kwan-Long & Chin, Jing-Wei & Chan,
+              Tsz Tai & So, Richard. (2021). Deep Learning Methods for Remote
+              Heart Rate Measurement: A Review and Future Research Agenda.
+              Sensors. 21. 6296. 10.3390/s21186296.
+            </div>
+            <div className="reference">
+              [3] P. Comon, “Independent component analysis, a new concept?”
+              Signal Process., vol. 36, pp. 287–314, 1994.
+            </div>
+            <div className="reference">
+              [4] W. G. Zijlstra, A. Buursma, and W. P. Meeuwsen-van der Roest,
+              “Absorption spectra of human fetal and adult oxyhemoglobin,
+              deoxyhemoglobin, carboxyhemoglobin, and methemoglobin,” Clin.
+              Chem., vol. 37, pp. 1633–1638, Sep. 1991.
             </div>
           </div>
         </div>
