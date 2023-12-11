@@ -9,6 +9,7 @@ import {
   Modal,
   List,
 } from "semantic-ui-react";
+import { average } from "./utils";
 import { POS } from "./rppg";
 
 import _ from "lodash";
@@ -18,6 +19,13 @@ import { BlockMath, InlineMath } from "react-katex";
 import { mean } from "mathjs";
 
 const SIGNAL_WINDOW = 64;
+
+let bgr = new window.cv.Mat();
+let hsv = new window.cv.Mat();
+let hls = new window.cv.Mat();
+let hsvSplit = new window.cv.MatVector();
+let hlsSplit = new window.cv.MatVector();
+let bgrSplit = new window.cv.MatVector();
 
 const defaultState = {
   loaded: false,
@@ -74,7 +82,7 @@ class App extends React.Component {
     console.log("All Assets Loaded");
 
     // Connect to WebSocket server
-    const ws = new WebSocket("wss://rppg-stanford-backend.fly.dev/ws");
+    const ws = new WebSocket("ws://localhost:8000/ws");
     ws.onopen = () => {
       console.log("Connected to the WebSocket server");
       this.setState({ socketConnected: true });
@@ -119,6 +127,35 @@ class App extends React.Component {
       let src = window.cv.matFromImageData(res);
 
       window.cv.medianBlur(src, this.state.blur, 3);
+      window.cv.cvtColor(this.state.blur, bgr, window.cv.COLOR_RGBA2BGR);
+      window.cv.cvtColor(bgr, hsv, window.cv.COLOR_BGR2HSV);
+      window.cv.cvtColor(bgr, hls, window.cv.COLOR_BGR2HLS);
+      window.cv.split(hsv, hsvSplit);
+      window.cv.split(hls, hlsSplit);
+      window.cv.split(bgr, bgrSplit);
+
+      const bgrCh0 = average(bgrSplit.get(0).data);
+      const bgrCh1 = average(bgrSplit.get(1).data);
+      const bgrCh2 = average(bgrSplit.get(2).data);
+      const hlsCh0 = average(hlsSplit.get(0).data);
+      const hlsCh1 = average(hlsSplit.get(1).data);
+      const hlsCh2 = average(hlsSplit.get(2).data);
+      const hsvCh0 = average(hsvSplit.get(0).data);
+      const hsvCh1 = average(hsvSplit.get(1).data);
+      const hsvCh2 = average(hsvSplit.get(2).data);
+
+      const avgArr = [
+        bgrCh0,
+        bgrCh1,
+        bgrCh2,
+        hlsCh0,
+        hlsCh1,
+        hlsCh2,
+        hsvCh0,
+        hsvCh1,
+        hsvCh2,
+      ];
+
       let imgData = new ImageData(
         new Uint8ClampedArray(this.state.blur.data),
         this.state.blur.cols,
@@ -137,7 +174,7 @@ class App extends React.Component {
         B,
       });
       signal.shift();
-      this.state.ws.send(JSON.stringify({ data: _signal }));
+      this.state.ws.send(JSON.stringify({ data: avgArr }));
       this.setState({ counter: this.state.counter + 1 });
     }
     if (!this.state.done) {
