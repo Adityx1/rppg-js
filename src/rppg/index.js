@@ -1,136 +1,117 @@
 import * as math from "mathjs";
 import { fft, util as fftUtil } from "fft-js";
-import ts from "timeseries-analysis";
+import TimeSeries from "timeseries-analysis";
 import { lowPassFilter } from "low-pass-filter";
 
-var projectionMatrix = math.matrix([
+const projectionMatrix = math.matrix([
   [0, 1, -1],
   [-2, 1, 1],
 ]);
 
-function checkNaN(arr) {
-  for (var i = 0; i < arr.length; i++) {
-    // check if array value is false or NaN
-    if (arr[i] === false || Number.isNaN(arr[i])) {
-      return true;
-    }
-  }
+function containsNaN(arr) {
+  return arr.some((value) => value === false || Number.isNaN(value));
 }
 
-function argMax(array) {
-  return array.map((x, i) => [x, i]).reduce((r, a) => (a[0] > r[0] ? a : r))[1];
+function findIndexOfMaxValue(array) {
+  return array
+    .map((value, index) => [value, index])
+    .reduce((max, current) => (current[0] > max[0] ? current : max))[1];
 }
 
-function calculateBPM(arr) {
-  var bpm = -1;
-  arr = arr.filter((s) => s.frequency > 0.8 && s.frequency < 2);
+function filterAndCalculateFrequency(arr, frequencyRange, multiplier) {
+  arr = arr.filter(
+    (signal) =>
+      signal.frequency > frequencyRange.min &&
+      signal.frequency < frequencyRange.max
+  );
   if (arr.length > 0) {
-    var max = argMax(arr.map((s) => s.magnitude));
-    bpm = arr.map((s) => s.frequency)[max] * 60;
-    console.log("BPM", bpm);
+    const maxIndex = findIndexOfMaxValue(arr.map((signal) => signal.magnitude));
+    const frequency = arr[maxIndex].frequency * multiplier;
+    console.log(`Frequency: ${frequency}`);
+    return frequency;
   }
-  return bpm;
+  return -1;
 }
 
-function calculateRR(arr) {
-  var rr = -1;
-  arr = arr.filter((s) => s.frequency > 0.2 && s.frequency < 0.5);
-  if (arr.length > 0) {
-    var max = argMax(arr.map((s) => s.magnitude));
-    rr = arr.map((s) => s.frequency)[max] * 60;
-    console.log("RR", rr);
-  }
-  return rr;
+function logarithmicFit(arr) {
+  return arr
+    .map((value) => {
+      const logValue = 100 - Math.log(100 * Math.abs(value));
+      return logValue === Infinity ? null : logValue;
+    })
+    .filter((value) => value !== null);
 }
 
-function logFit(arr) {
-  var out = new Array();
-  for (var i = 0; i < arr.length; i++) {
-    var val = 100 - Math.log(100 * Math.abs(arr[i]));
-    if (val == Infinity) {
-      continue;
-    }
-    out.push(val);
-  }
-  return out;
-}
-
-function calculateOSAT(arr) {
-  if (arr.length < 10) {
+function calculateForecast(arr, degree) {
+  if (arr.length < degree) {
     return -1;
   }
-  var t = new ts.main(ts.adapter.fromArray(arr));
-  var coeffs = t.ARLeastSquare({ degree: 9 });
-  var forecast = 0; // Init the value at 0.
-  for (var i = 0; i < coeffs.length; i++) {
-    // Loop through the coefficients
-    forecast += t.data[t.data.length - 1 - i][1] * coeffs[i];
-    // Explanation for that line:
-    // t.data contains the current dataset, which is in the format [ [date, value], [date,value], ... ]
-    // For each coefficient, we substract from "forecast" the value of the "N - x" datapoint's value, multiplicated by the coefficient, where N is the last known datapoint value, and x is the coefficient's index.
-  }
-  // console.log(forecast);
-  return forecast;
+  const timeSeries = new TimeSeries.main(TimeSeries.adapter.fromArray(arr));
+  const coefficients = timeSeries.ARLeastSquare({ degree });
+  return coefficients.reduce((forecast, coeff, index) => {
+    return (
+      forecast + timeSeries.data[timeSeries.data.length - 1 - index][1] * coeff
+    );
+  }, 0);
 }
 
-export function POS(signal, window) {
-  // signal = {date, R, G, B}
-  var H = new Array(signal.length).fill(0);
-  signal = signal.slice(50, signal.length);
-  for (var i = 0; i < signal.length - window; i++) {
-    // Temporal Normalization
-    var C = new Array(window);
-    signal.slice(i, i + window).forEach((v, ind) => {
-      C[ind] = [v.R, v.G, v.B];
-    });
-    C = math.transpose(C);
-    var mean = math.mean(C, 1);
-    var diag = math.diag(mean);
-    var inv = math.inv(diag);
-    var Cn = math.multiply(inv, C);
+export function POS(signal, windowSize) {
+  let H = new Array(signal.length).fill(0);
+  signal = signal.slice(50);
 
-    // Step 3
-    var S = math.multiply(projectionMatrix, Cn);
-    S = S._data;
+  for (let i = 0; i < signal.length - windowSize; i++) {
+    let windowedSignal = signal
+      .slice(i, i + windowSize)
+      .map((v) => [v.R, v.G, v.B]);
+    windowedSignal = math.transpose(windowedSignal);
+    const mean = math.mean(windowedSignal, 1);
+    const normalizedSignal = math.multiply(
+      math.inv(math.diag(mean)),
+      windowedSignal
+    );
 
-    // Step 4 -> 2D signal to 1D signal
-    var std = [1, math.std(S[0]) / math.std(S[1])];
-    var P = math.multiply(std, S);
+    let S = math.multiply(projectionMatrix, normalizedSignal)._data;
+    const std = [1, math.std(S[0]) / math.std(S[1])];
+    let P = math.multiply(std, S);
+    P = math.subtract(P, math.divide(math.mean(P), math.std(P)));
+    P = math.add(H.slice(i, i + windowSize), P);
 
-    // Step 5 -> Overlap adding
-    var a = math.subtract(P, math.divide(math.mean(P), math.std(P)));
-
-    a = math.add(H.slice(i, i + window), a);
-
-    H.splice(i, window, ...a);
+    H.splice(i, windowSize, ...P);
   }
 
   lowPassFilter(H, 2, 12, 1);
 
-  let hasNaN = checkNaN(H);
-  var both = new Array(64).fill({ frequency: 0, magnitude: 0 });
-  if (!hasNaN) {
-    try {
-      var phasors = fft(H);
-
-      var frequencies = fftUtil.fftFreq(phasors, 3), // Sample rate and coef is just used for length, and frequency step
-        magnitudes = fftUtil.fftMag(phasors);
-
-      both = frequencies.map(function (f, ix) {
-        return { frequency: f, magnitude: magnitudes[ix] };
-      });
-
-      // console.log(both);
-    } catch (error) {
-      console.log(error);
-    }
+  if (containsNaN(H)) {
+    return [H, [], -1, -1, -1];
   }
 
-  var bpm = calculateBPM(both);
-  var rr = calculateRR(both);
-  var r = signal.map((s) => s["R"]);
-  lowPassFilter(r, 5.5, 12, 1);
-  r = logFit(r);
-  var oSat = calculateOSAT(r);
-  return [H, both, bpm, rr, oSat];
+  try {
+    const phasors = fft(H);
+    const frequencies = fftUtil.fftFreq(phasors, 3);
+    const magnitudes = fftUtil.fftMag(phasors);
+    const frequencyData = frequencies.map((frequency, index) => ({
+      frequency,
+      magnitude: magnitudes[index],
+    }));
+
+    const bpm = filterAndCalculateFrequency(
+      frequencyData,
+      { min: 0.8, max: 2 },
+      60
+    );
+    const rr = filterAndCalculateFrequency(
+      frequencyData,
+      { min: 0.2, max: 0.5 },
+      60
+    );
+    const rValues = signal.map((s) => s.R);
+    lowPassFilter(rValues, 5.5, 12, 1);
+    const logFittedRValues = logarithmicFit(rValues);
+    const oSat = calculateForecast(logFittedRValues, 9);
+
+    return [H, frequencyData, bpm, rr, oSat];
+  } catch (error) {
+    console.error(error);
+    return [H, [], -1, -1, -1];
+  }
 }
