@@ -20,6 +20,7 @@ import { mean } from "mathjs";
 
 const SIGNAL_WINDOW = 64;
 
+let blur = new window.cv.Mat();
 let bgr = new window.cv.Mat();
 let hsv = new window.cv.Mat();
 let hls = new window.cv.Mat();
@@ -95,7 +96,7 @@ class App extends React.Component {
         this.setState({ ppg: data.graph });
       }
     };
-    this.setState({ loaded: true, ws, blur: new window.cv.Mat() });
+    this.setState({ loaded: true, ws });
   };
 
   async componentDidMount() {
@@ -126,8 +127,8 @@ class App extends React.Component {
 
       let src = window.cv.matFromImageData(res);
 
-      window.cv.medianBlur(src, this.state.blur, 3);
-      window.cv.cvtColor(this.state.blur, bgr, window.cv.COLOR_RGBA2BGR);
+      window.cv.medianBlur(src, blur, 3);
+      window.cv.cvtColor(blur, bgr, window.cv.COLOR_RGBA2BGR);
       window.cv.cvtColor(bgr, hsv, window.cv.COLOR_BGR2HSV);
       window.cv.cvtColor(bgr, hls, window.cv.COLOR_BGR2HLS);
       window.cv.split(hsv, hsvSplit);
@@ -157,9 +158,9 @@ class App extends React.Component {
       ];
 
       let imgData = new ImageData(
-        new Uint8ClampedArray(this.state.blur.data),
-        this.state.blur.cols,
-        this.state.blur.rows
+        new Uint8ClampedArray(blur.data),
+        blur.cols,
+        blur.rows
       );
 
       var out = toRGB(imgData.data, imgData.width, imgData.height);
