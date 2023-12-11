@@ -25,6 +25,8 @@
     "react-animated-numbers": "^0.17.1",
     "react-chartjs-2": "^2.9.0",
     "react-dom": "^18.2.0",
+    "react-katex": "^3.0.1",
+    "react-latex-next": "^2.2.0",
     "scijs": "^0.7.3",
     "semantic-ui-css": "^2.5.0",
     "semantic-ui-react": "^2.1.4",

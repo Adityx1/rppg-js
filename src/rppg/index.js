@@ -3,11 +3,6 @@ import { fft, util as fftUtil } from "fft-js";
 import ts from "timeseries-analysis";
 import { lowPassFilter } from "low-pass-filter";
 
-/**
- *
- * @param {Array(100)} signal
- */
-
 var projectionMatrix = math.matrix([
   [0, 1, -1],
   [-2, 1, 1],
@@ -75,9 +70,8 @@ function calculateOSAT(arr) {
     // For each coefficient, we substract from "forecast" the value of the "N - x" datapoint's value, multiplicated by the coefficient, where N is the last known datapoint value, and x is the coefficient's index.
   }
   // console.log(forecast);
+  return forecast;
 }
-
-let HR = new Array();
 
 export function POS(signal, window) {
   // signal = {date, R, G, B}
@@ -122,7 +116,7 @@ export function POS(signal, window) {
       var frequencies = fftUtil.fftFreq(phasors, 3), // Sample rate and coef is just used for length, and frequency step
         magnitudes = fftUtil.fftMag(phasors);
 
-      var both = frequencies.map(function (f, ix) {
+      both = frequencies.map(function (f, ix) {
         return { frequency: f, magnitude: magnitudes[ix] };
       });
 
@@ -138,5 +132,5 @@ export function POS(signal, window) {
   lowPassFilter(r, 5.5, 12, 1);
   r = logFit(r);
   var oSat = calculateOSAT(r);
-  return [H, both, bpm, rr];
+  return [H, both, bpm, rr, oSat];
 }

@@ -26,7 +26,11 @@ body {
   display: flex;
   place-items: center;
   min-width: 320px;
-  min-height: 100vh;
+  /* min-height: 100vh; */
+}
+
+body {
+  height: unset !important;
 }
 
 h1 {
@@ -53,8 +57,17 @@ button:focus-visible {
   outline: 4px auto -webkit-focus-ring-color;
 }
 
+.App {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 6rem 0;
+}
+
 .innerContainer {
   display: flex;
+  justify-content: center;
+  align-items: center;
 }
 
 .videoContainer {
@@ -106,6 +119,17 @@ button:focus-visible {
 
 .chart {
   width: 30vw;
+}
+
+.docs {
+  width: 60vw;
+  max-width: 800px;
+  margin-top: 3rem;
+}
+
+.docs .title {
+  font-weight: 800;
+  text-transform: uppercase;
 }
 
 @media screen and (max-width: 600px) {
