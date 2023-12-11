@@ -143,6 +143,7 @@ button:focus-visible {
 
 .section p {
   width: 100%;
+  text-align: justify;
 }
 
 .section .caption {
@@ -167,6 +168,7 @@ button:focus-visible {
 .reference {
   margin-bottom: 0.5rem;
   width: 100%;
+  text-align: justify;
 }
 
 @media screen and (max-width: 600px) {
