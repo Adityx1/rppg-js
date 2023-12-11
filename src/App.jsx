@@ -495,7 +495,7 @@ class App extends React.Component {
           </div>
           <div className="section">
             <img src="/media/img/model.png" alt="Reflectance Model" />
-            <div className="caption">Figure 1. The reflectance model.</div>
+            <div className="caption">Figure 1. The Reflectance Model.</div>
           </div>
           <div className="section">
             <div className="title">Blind Source Separation</div>
@@ -544,7 +544,15 @@ class App extends React.Component {
           </div>
           <div className="section">
             <img src="/media/img/outline.png" alt="Reflectance Model" />
-            <div className="caption">Figure 2. The reflectance model.</div>
+            <div className="caption">
+              Figure 2.Face detection is performed on the video frames,
+              resulting in the red bounding box on the face. Next, regions of
+              interest (ROIs) such as the cheeks marked by the black boxes are
+              selected within the face box. The rPPG signal is extracted from
+              the pixels within the ROIs. Lastly, post-processing techniques,
+              such as frequency analysis (e.g., Fourier transform) and peak
+              detection, are applied on the extracted signal to estimate HR.
+            </div>
           </div>
           <div className="section">
             <p>
