@@ -545,7 +545,7 @@ class App extends React.Component {
           <div className="section">
             <img src="/media/img/outline.png" alt="Reflectance Model" />
             <div className="caption">
-              Figure 2.Face detection is performed on the video frames,
+              Figure 2. Face detection is performed on the video frames,
               resulting in the red bounding box on the face. Next, regions of
               interest (ROIs) such as the cheeks marked by the black boxes are
               selected within the face box. The rPPG signal is extracted from
