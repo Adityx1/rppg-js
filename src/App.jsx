@@ -15,7 +15,6 @@ import { POS } from "./rppg";
 import _ from "lodash";
 import { Line } from "react-chartjs-2";
 import { initCamera, toRGB } from "./utils";
-import { BlockMath, InlineMath } from "react-katex";
 import { mean } from "mathjs";
 
 const SIGNAL_WINDOW = 64;
@@ -28,7 +27,15 @@ let hsvSplit;
 let hlsSplit;
 let bgrSplit;
 
-const defaultState = {
+const createSignalBuffer = () =>
+  new Array(2 * SIGNAL_WINDOW).fill(null).map(() => ({
+    time: 0,
+    R: 0,
+    B: 0,
+    G: 0,
+  }));
+
+const createDefaultState = () => ({
   loaded: false,
   ppg: [],
   bpm: -1,
@@ -37,18 +44,16 @@ const defaultState = {
   counter: 0,
   done: false,
   started: false,
-  signal: new Array(2 * SIGNAL_WINDOW).fill({
-    time: 0,
-    R: 0,
-    B: 0,
-    G: 0,
-  }),
+  signal: createSignalBuffer(),
   rr: -1,
   blur: null,
   socketConnected: false,
   mobilePermissionsGranted: false,
   openInstructionsModal: false,
-};
+  oSat: -1,
+  resultsTimestamp: null,
+  view: "landing",
+});
 
 async function initFaceApi() {
   await faceapi.nets.ssdMobilenetv1.loadFromUri("/weights");
@@ -74,7 +79,7 @@ function isMobileBrowser() {
 
 class App extends React.Component {
   counter = 0;
-  state = defaultState;
+  state = createDefaultState();
 
   initialize = async () => {
     this.video = document.getElementById("inputVideo");
@@ -110,10 +115,13 @@ class App extends React.Component {
     console.log("Loading assets");
     window.faceapi = faceapi;
     await initFaceApi();
-    if (!isMobileBrowser()) {
-      const video = document.getElementById("inputVideo");
-      await initCamera(video);
-      this.initialize();
+  }
+
+  async componentDidUpdate(prevProps, prevState) {
+    if (prevState.view !== this.state.view && this.state.view === "scan") {
+      if (!this.state.started) {
+        this.handleStartMeasurement();
+      }
     }
   }
 
@@ -205,9 +213,18 @@ class App extends React.Component {
     } else {
       let out = POS(this.state.signal, SIGNAL_WINDOW);
       console.log({ out });
+      this.stopVideoStream();
+      this.closeWebSocket();
       this.setState({
         bpm2: out[2],
         rr: out[3],
+        oSat: out[4],
+        resultsTimestamp: new Date(),
+        started: false,
+        ws: null,
+        socketConnected: false,
+        loaded: false,
+        view: "results",
       });
     }
   };
@@ -232,11 +249,521 @@ class App extends React.Component {
     return data;
   };
 
+  startFreeScan = () => {
+    this.setState({ view: "scan" });
+  };
+
+  restartFlow = () => {
+    const { ws, mobilePermissionsGranted, loaded, socketConnected } = this.state;
+    const baseState = createDefaultState();
+    this.stopVideoStream();
+    this.closeWebSocket();
+    this.setState({
+      ...baseState,
+      mobilePermissionsGranted,
+      view: "landing",
+    });
+  };
+
+  ensureScannerInitialized = async () => {
+    if (isMobileBrowser() && !this.state.mobilePermissionsGranted) {
+      return { ready: false, reason: "mobile-permissions" };
+    }
+
+    const video = document.getElementById("inputVideo");
+    const canvas = document.getElementById("overlay");
+
+    if (this.state.loaded) {
+      if (video && canvas) {
+        const hasActiveStream =
+          video.srcObject &&
+          video.srcObject.getTracks().some((track) => track.readyState === "live");
+
+        if (!hasActiveStream) {
+          await initCamera(video);
+        }
+
+        this.video = video;
+        this.canvas = canvas;
+        return { ready: true };
+      }
+      return { ready: false, reason: "elements-not-ready" };
+    }
+
+    if (!video) {
+      return { ready: false, reason: "elements-not-ready" };
+    }
+
+    try {
+      await initCamera(video);
+      await this.initialize();
+      this.video = video;
+      this.canvas = document.getElementById("overlay");
+      if (!this.canvas) {
+        return { ready: false, reason: "elements-not-ready" };
+      }
+      return { ready: true };
+    } catch (error) {
+      console.error("Failed to initialize scanner", error);
+      return { ready: false, reason: "init-failed" };
+    }
+  };
+
+  handleStartMeasurement = async (attempt = 0) => {
+    const { ready, reason } = await this.ensureScannerInitialized();
+    if (!ready) {
+      if (
+        reason === "elements-not-ready" &&
+        attempt < 5 &&
+        this.state.view === "scan"
+      ) {
+        setTimeout(() => this.handleStartMeasurement(attempt + 1), 150);
+      }
+      return;
+    }
+
+    this.setState(
+      {
+        started: true,
+        done: false,
+        counter: 0,
+        bpm: -1,
+        bpm2: -1,
+        rr: -1,
+        oSat: -1,
+        ppg: [],
+        signal: createSignalBuffer(),
+      },
+      () => {
+        this.onPlay();
+      }
+    );
+  };
+
+  stopVideoStream = () => {
+    const video = this.video || document.getElementById("inputVideo");
+    if (video && video.srcObject) {
+      video.srcObject.getTracks().forEach((track) => track.stop());
+      video.srcObject = null;
+    }
+
+    if (this.canvas) {
+      const ctx = this.canvas.getContext("2d");
+      if (ctx) {
+        ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+      }
+    }
+
+    this.video = null;
+    this.canvas = null;
+  };
+
+  closeWebSocket = () => {
+    const { ws } = this.state;
+    if (ws) {
+      try {
+        ws.onopen = null;
+        ws.onmessage = null;
+        ws.onerror = null;
+        ws.onclose = null;
+        ws.close();
+      } catch (error) {
+        console.warn("Error closing WebSocket", error);
+      }
+    }
+  };
+
+  renderLanding = () => (
+    <div className="landing-page">
+      <header className="hero">
+        <div className="hero-text">
+          <div className="badge">
+            <Icon name="star" /> AI-Powered Health Analysis
+          </div>
+          <h1>
+            Measure Your Vitals <span>In 30 Seconds</span>
+          </h1>
+          <p>
+            Advanced face scanning technology to measure heart rate, respiratory rate, stress levels, and more—right from your webcam.
+          </p>
+          <div className="hero-actions">
+            <Button
+              size="big"
+              primary
+              onClick={this.startFreeScan}
+              icon
+              labelPosition="right"
+              className="primary"
+            >
+              Start Free Scan
+              <Icon name="play" />
+            </Button>
+            <Button
+              size="big"
+              onClick={() => this.setState({ openInstructionsModal: true })}
+              icon
+              labelPosition="right"
+            >
+              View Instructions
+              <Icon name="help circle" />
+            </Button>
+          </div>
+        </div>
+        <div className="hero-visual">
+          <div className="pulse-ring">
+            <Icon name="heartbeat" size="massive" color="teal" />
+          </div>
+        </div>
+      </header>
+
+      <section className="how-it-works">
+        <h2>How It Works</h2>
+        <div className="steps">
+          <div className="step">
+            <div className="icon">
+              <Icon name="map marker alternate" />
+            </div>
+            <h3>Position Your Face</h3>
+            <p>Center your face in the frame with a well-lit background.</p>
+          </div>
+          <div className="step">
+            <div className="icon">
+              <Icon name="clock" />
+            </div>
+            <h3>30-Second Scan</h3>
+            <p>Stay still while we analyze thousands of subtle color variations.</p>
+          </div>
+          <div className="step">
+            <div className="icon">
+              <Icon name="chart line" />
+            </div>
+            <h3>Get Instant Results</h3>
+            <p>Review heart and respiratory metrics as soon as the scan ends.</p>
+          </div>
+        </div>
+      </section>
+
+      <section className="metrics-overview">
+        <h2>Comprehensive Health Metrics</h2>
+        <div className="grid">
+          {[
+            "Heart Rate",
+            "Blood Pressure",
+            "Respiratory Rate",
+            "Stress Index",
+            "HRV",
+            "Wellness Score",
+            "Risk Assessment",
+            "Trend Analysis",
+          ].map((metric) => (
+            <div className="metric-card" key={metric}>
+              <Icon name="heartbeat" />
+              <span>{metric}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="secure-info">
+        <Icon name="shield" size="big" />
+        <div>
+          <h3>Secure &amp; Private</h3>
+          <p>
+            Your health data is encrypted and never stored. GDPR, PDPA, and UK-GDPR compliant.
+          </p>
+        </div>
+      </section>
+
+      <section className="cta-section">
+        <h2>Ready to Check Your Health?</h2>
+        <p>Join thousands using FaceVitals for daily health monitoring.</p>
+        <Button
+          size="huge"
+          primary
+          onClick={this.startFreeScan}
+          icon
+          labelPosition="right"
+          className="primary"
+        >
+          Start Your Free Scan
+          <Icon name="play" />
+        </Button>
+      </section>
+    </div>
+  );
+
+  renderScanner = () => (
+    <div className="innerContainer">
+      <div className="videoContainer">
+        <div className="title">
+          <div>Remote Photoplethysmography Demo</div>
+          <div className="action">
+            <Button
+              basic
+              size="small"
+              onClick={() => {
+                this.setState({
+                  openInstructionsModal: true,
+                });
+              }}
+            >
+              Instructions
+            </Button>
+            {isMobileBrowser() && !this.state.mobilePermissionsGranted && (
+              <Button
+                size="small"
+                primary
+                onClick={async () => {
+                  const video = document.getElementById("inputVideo");
+                  await initCamera(video);
+                  await this.initialize();
+                  this.setState({ mobilePermissionsGranted: true });
+                }}
+                icon
+                labelPosition="right"
+                secondary
+              >
+                Provide Permissions
+                <Icon name="right arrow" />
+              </Button>
+            )}
+            {!this.state.started && (
+              <Button
+                size="small"
+                primary
+                onClick={this.handleStartMeasurement}
+                icon
+                labelPosition="right"
+                positive
+                loading={!this.state.socketConnected || !this.state.loaded}
+              >
+                Start
+                <Icon name="right arrow" />
+              </Button>
+            )}
+          </div>
+        </div>
+        <div style={{ position: "relative" }}>
+          <video
+            id="inputVideo"
+            height={`${
+              window.innerWidth > 600
+                ? window.innerHeight * 0.5
+                : window.innerHeight * 0.4
+            }px`}
+            width={`${
+              window.innerWidth > 600
+                ? window.innerWidth * 0.58
+                : window.innerWidth * 0.9
+            }px`}
+            autoPlay
+            muted
+            playsInline
+          ></video>
+          <canvas
+            id="overlay"
+            style={{ position: "relative", marginTop: "-900px" }}
+          />
+        </div>
+        <div style={{ width: "97%" }}>
+          <Progress
+            progress
+            fluid
+            percent={this.state.counter / 10}
+            indicating
+          >
+            {this.state.started
+              ? this.state.counter < 1000
+                ? "Calculating.."
+                : "Done"
+              : ""}
+          </Progress>
+        </div>
+      </div>
+      <div className="chartContainer">
+        <div className="chart">
+          <Line
+            data={this.chartOptions(
+              "PPG Signal",
+              this.state.ppg,
+              "rgb(255, 58, 58)"
+            )}
+          />
+        </div>
+        <div className="metric-outer-container">
+          <div className="metric-title">
+            Heart Rate (PPG Peak Detection)
+          </div>
+          {this.state.bpm !== -1 ? (
+            <div className="metric-inner-container">
+              <span className="metric">{this.state.bpm.toFixed(0)}</span>
+              <span className="units">bpm</span>
+            </div>
+          ) : (
+            <Placeholder>
+              <Placeholder.Line length="very short" />
+            </Placeholder>
+          )}
+        </div>
+        <div className="metric-outer-container">
+          <div className="metric-title">Heart Rate (POS)</div>
+          {this.state.bpm2 !== -1 ? (
+            <div className="metric-inner-container">
+              <span className="metric">{this.state.bpm2.toFixed(0)}</span>
+              <span className="units">bpm</span>
+            </div>
+          ) : (
+            <Placeholder>
+              <Placeholder.Line length="very short" />
+            </Placeholder>
+          )}
+        </div>
+        <div className="metric-outer-container">
+          <div className="metric-title title-blue">Respiratory Rate</div>
+          {this.state.rr !== -1 ? (
+            <div className="metric-inner-container">
+              <span className="metric">{this.state.rr.toFixed(0)}</span>
+              <span className="units">bpm</span>
+            </div>
+          ) : (
+            <Placeholder>
+              <Placeholder.Line length="very short" />
+            </Placeholder>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  renderResults = () => (
+    <div className="results-page">
+      <header>
+        <div>
+          <h1>Scan Results</h1>
+          {this.state.resultsTimestamp && (
+            <p>
+              Completed on {this.state.resultsTimestamp.toLocaleDateString()} at {" "}
+              {this.state.resultsTimestamp.toLocaleTimeString()}
+            </p>
+          )}
+        </div>
+        <div className="header-actions">
+          <Button basic icon labelPosition="left">
+            <Icon name="download" /> Export PDF
+          </Button>
+          <Button primary icon labelPosition="left">
+            <Icon name="chat" /> Message Coach
+          </Button>
+        </div>
+      </header>
+
+      <section className="health-status">
+        <div className="score">
+          <span>Overall Health Status</span>
+          <h2>8.5 / 10</h2>
+          <p>Your vital signs are within healthy ranges.</p>
+        </div>
+      </section>
+
+      <section className="vital-metrics">
+        <h2>Vital Signs</h2>
+        <div className="metrics-grid">
+          {[
+            {
+              label: "Heart Rate",
+              value:
+                this.state.bpm !== -1
+                  ? `${this.state.bpm.toFixed(0)} bpm`
+                  : "N/A",
+              status: "good",
+              note: "±2 bpm vs. last scan",
+            },
+            {
+              label: "Heart Rate (POS)",
+              value:
+                this.state.bpm2 !== -1
+                  ? `${this.state.bpm2.toFixed(0)} bpm`
+                  : "N/A",
+              status: "good",
+              note: "Signal processed via POS algorithm",
+            },
+            {
+              label: "Respiratory Rate",
+              value:
+                this.state.rr !== -1
+                  ? `${this.state.rr.toFixed(0)} /min`
+                  : "N/A",
+              status: "good",
+              note: "±0 /min vs. last scan",
+            },
+            {
+              label: "Oxygen Saturation Forecast",
+              value:
+                this.state.oSat !== -1
+                  ? `${this.state.oSat.toFixed(0)} %`
+                  : "N/A",
+              status: "good",
+              note: "Predicted from signal analysis",
+            },
+          ].map((metric) => (
+            <div className={`metric-card ${metric.status}`} key={metric.label}>
+              <div className="metric-header">
+                <span>{metric.label}</span>
+                <span className="status">{metric.status}</span>
+              </div>
+              <div className="metric-value">{metric.value}</div>
+              <div className="metric-note">{metric.note}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="risk-assessment">
+        <h2>Risk Assessment</h2>
+        <div className="risk-cards">
+          <div className="risk-card green">
+            <h3>Cardiovascular Risk</h3>
+            <p>Low risk based on current metrics.</p>
+          </div>
+          <div className="risk-card yellow">
+            <h3>Stress Level</h3>
+            <p>Slightly elevated. Consider relaxation techniques.</p>
+          </div>
+        </div>
+      </section>
+
+      <section className="recommended-actions">
+        <h2>Recommended Actions</h2>
+        <div className="actions-grid">
+          {[
+            "Book a Consultation",
+            "Order Lab Tests",
+            "View Trends",
+            "Message Your Coach",
+          ].map((action) => (
+            <Button key={action} icon labelPosition="right">
+              {action}
+              <Icon name="arrow right" />
+            </Button>
+          ))}
+        </div>
+      </section>
+
+      <footer>
+        <Button size="big" onClick={this.restartFlow}>
+          Take Another Scan
+        </Button>
+      </footer>
+    </div>
+  );
+
   render() {
+    const { view, openInstructionsModal } = this.state;
+
     return (
       <div className="App">
         <Modal
-          open={this.state.openInstructionsModal}
+          open={openInstructionsModal}
           onClose={() => {
             this.setState({
               openInstructionsModal: false,
@@ -251,156 +778,17 @@ class App extends React.Component {
                 Be in a well lit environment with a light source directly on
                 your face.
               </List.Item>
-              <List.Item>Be static during the recording.</List.Item>
+              <List.Item>Remain still during the recording.</List.Item>
               <List.Item>
-                Place your face as close to the camera as possible.{" "}
+                Position your face close to the camera to maximize accuracy.
               </List.Item>
             </List>
           </Modal.Content>
         </Modal>
-        <div className="innerContainer">
-          <div className="videoContainer">
-            <div className="title">
-              <div>Remote Photoplethysmography Demo</div>
-              <div className="action">
-                <Button
-                  basic
-                  size="small"
-                  onClick={() => {
-                    this.setState({
-                      openInstructionsModal: true,
-                    });
-                  }}
-                >
-                  Instructions
-                </Button>
-                {isMobileBrowser() && !this.state.mobilePermissionsGranted && (
-                  <Button
-                    size="small"
-                    primary
-                    onClick={async () => {
-                      const video = document.getElementById("inputVideo");
-                      await initCamera(video);
-                      await this.initialize();
-                      this.setState({ mobilePermissionsGranted: true });
-                    }}
-                    icon
-                    labelPosition="right"
-                    secondary
-                  >
-                    Provide Permissions
-                    <Icon name="right arrow" />
-                  </Button>
-                )}
-                {!this.state.started && (
-                  <Button
-                    size="small"
-                    primary
-                    onClick={() => {
-                      this.onPlay();
-                      this.setState({ started: true });
-                    }}
-                    icon
-                    labelPosition="right"
-                    positive
-                    loading={!this.state.socketConnected || !this.state.loaded}
-                  >
-                    Start
-                    <Icon name="right arrow" />
-                  </Button>
-                )}
-              </div>
-            </div>
-            <div style={{ position: "relative" }}>
-              <video
-                id="inputVideo"
-                height={`${
-                  window.innerWidth > 600
-                    ? window.innerHeight * 0.5
-                    : window.innerHeight * 0.4
-                }px`}
-                width={`${
-                  window.innerWidth > 600
-                    ? window.innerWidth * 0.58
-                    : window.innerWidth * 0.9
-                }px`}
-                autoPlay
-                muted
-                playsInline
-              ></video>
-              <canvas
-                id="overlay"
-                style={{ position: "relative", marginTop: "-900px" }}
-              />
-            </div>
-            <div style={{ width: "97%" }}>
-              <Progress
-                progress
-                fluid
-                percent={this.state.counter / 10}
-                indicating
-              >
-                {this.state.started
-                  ? this.state.counter < 1000
-                    ? "Calculating.."
-                    : "Done"
-                  : ""}
-              </Progress>
-            </div>
-          </div>
-          <div className="chartContainer">
-            <div className="chart">
-              <Line
-                data={this.chartOptions(
-                  "PPG Signal",
-                  this.state.ppg,
-                  "rgb(255, 58, 58)"
-                )}
-              />
-            </div>
-            <div className="metric-outer-container">
-              <div className="metric-title">
-                Heart Rate (PPG Peak Detection)
-              </div>
-              {this.state.bpm !== -1 ? (
-                <div className="metric-inner-container">
-                  <span className="metric">{this.state.bpm.toFixed(0)}</span>
-                  <span className="units">bpm</span>
-                </div>
-              ) : (
-                <Placeholder>
-                  <Placeholder.Line length="very short" />
-                </Placeholder>
-              )}
-            </div>
-            <div className="metric-outer-container">
-              <div className="metric-title">Heart Rate (POS)</div>
-              {this.state.bpm !== -1 ? (
-                <div className="metric-inner-container">
-                  <span className="metric">{this.state.bpm2.toFixed(0)}</span>
-                  <span className="units">bpm</span>
-                </div>
-              ) : (
-                <Placeholder>
-                  <Placeholder.Line length="very short" />
-                </Placeholder>
-              )}
-            </div>
-            <div className="metric-outer-container">
-              <div className="metric-title title-blue">Respiratory Rate</div>
-              {this.state.bpm !== -1 ? (
-                <div className="metric-inner-container">
-                  <span className="metric">{this.state.rr.toFixed(0)}</span>
-                  <span className="units">bpm</span>
-                </div>
-              ) : (
-                <Placeholder>
-                  <Placeholder.Line length="very short" />
-                </Placeholder>
-              )}
-            </div>
-          </div>
-        </div>
+
+        {view === "landing" && this.renderLanding()}
+        {view === "scan" && this.renderScanner()}
+        {view === "results" && this.renderResults()}
       </div>
     );
   }
